@@ -1,24 +1,12 @@
-name: Update page lists
-
+name: Disabled
+# The AoPS Wiki API is behind Cloudflare which blocks GitHub Actions IPs.
+# This workflow is disabled. To update page lists, run downloadlists.js
+# manually in a browser console on the live site.
 on:
-  push:
-  pull_request:
-  schedule:
-    - cron: "0 0 * * *"
+  workflow_dispatch:
 
 jobs:
-  test:
+  placeholder:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2
-        with:
-          node-version: "18"
-      - run: npm ci
-      - run: node downloadlists.js
-      - run: |
-          git config --global user.name "vqbc"
-          git config --global user.email "andrewggchang@gmail.com"
-          git add -A
-          git diff-index --quiet HEAD || git commit -m "Update page lists"
-          git push
+      - run: echo "Workflow disabled - Cloudflare blocks API requests from GitHub Actions"
