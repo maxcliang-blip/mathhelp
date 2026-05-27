@@ -225,6 +225,39 @@
     <ul>
   </div>`;
   let printLinks = false;
+  // Show error message to user
+  function showError(message, details) {
+    let errorHtml = `<div class="problem-section error-section">
+      <h2 class="section-header" id="article-header">Error</h2>
+      <p class="error">${message}</p>`;
+    if (details) {
+      errorHtml += `<p class="error-details">${details}</p>`;
+    }
+    errorHtml += `</div>`;
+    $(".notes").before(errorHtml);
+  }
+
+  // Fetch with timeout and error handling
+  async function fetchWithTimeout(url, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs || 15000);
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status} ${response.statusText}`);
+      }
+      return response;
+    } catch (err) {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') {
+        throw new Error('Request timed out. The AoPS server may be slow or unreachable.');
+      }
+      throw err;
+    }
+  }
+
+
   let clickedTimes = 0;
   let answerTimes = 0;
   let subtitleClicked = 0;
@@ -232,6 +265,14 @@
   let answerTries = 0;
   let streakCount = 0;
   let progressUpdated = false;
+  // Load persisted progress stats from localStorage
+  let storedRight = parseInt(JSON.parse(localStorage.getItem("progressRight"))) || 0;
+  let storedRetry = parseInt(JSON.parse(localStorage.getItem("progressRetry"))) || 0;
+  let storedWrong = parseInt(JSON.parse(localStorage.getItem("progressWrong"))) || 0;
+  let storedBlank = parseInt(JSON.parse(localStorage.getItem("progressBlank"))) || 0;
+  streakCount = parseInt(JSON.parse(localStorage.getItem("progressStreak"))) || 0;
+
+
 
   let searchParams = new URLSearchParams(location.search);
   let lastParam = searchParams.get("page") ?? searchParams.get("problems");
@@ -318,8 +359,15 @@
 
     let params = `action=parse&page=${pagename}&format=json`;
 
-    let response = await fetch(`${apiEndpoint}?${params}&origin=*`);
-    let json = await response.json();
+    let response;
+    let json;
+    try {
+      response = await fetchWithTimeout(`${apiEndpoint}?${params}&origin=*`);
+      json = await response.json();
+    } catch (err) {
+      showError("Failed to load problem.", err.message);
+      return false;
+    }
     let finalPage = pagename;
 
     if (json?.parse) {
@@ -340,8 +388,13 @@
         console.log(redirPage);
 
         params = `action=parse&page=${redirPage}&format=json`;
-        response = await fetch(`${apiEndpoint}?${params}&origin=*`);
-        json = await response.json();
+        try {
+          response = await fetchWithTimeout(`${apiEndpoint}?${params}&origin=*`);
+          json = await response.json();
+        } catch (err) {
+          showError("Failed to load redirected problem.", err.message);
+          return false;
+        }
         problemText = latexer(json.parse.text["*"]);
         problemProblem = getProblem(problemText);
         problemSolutions = getSolutions(problemText);
@@ -381,18 +434,18 @@
       $("#random-input").addClass("random-input-active");
       if (!$(".practice-progress").length) {
         $("#problem-section").before(
-          `<div class="practice-progress progress-nobottom progress-hidden">
+          `<div class="practice-progress progress-nobottomprogress-hidden">
           <div class="streak-bar bar-hidden">` +
             `<span id="streak-num">0</span> streak</div>
-          <div class="question-bar right-questions bar-hidden" style="flex-grow: 0">` +
-            `<span id="right-num">0</span> correct</div>
-          <div class="question-bar retry-questions bar-hidden" style="flex-grow: 0">` +
-            `<span id="retry-num">0</span> retry</div>
+          <div class="question-bar right-questions bar-hidden" style="flex-grow: ${storedRight}">` +
+            `<span id="right-num">${storedRight}</span> correct</div>
+          <div class="question-bar retry-questions bar-hidden" style="flex-grow: ${storedRetry}">` +
+            `<span id="retry-num">${storedRetry}</span> retry</div>
           <div class="spacer-bar" style="flex-grow: 0"></div>
-          <div class="question-bar blank-questions bar-hidden" style="flex-grow: 0">` +
-            `<span id="blank-num">0</span> blank</div>
-          <div class="question-bar wrong-questions bar-hidden" style="flex-grow: 0">` +
-            `<span id="wrong-num">0</span> incorrect</div>
+          <div class="question-bar blank-questions bar-hidden" style="flex-grow: ${storedBlank}">` +
+            `<span id="blank-num">${storedBlank}</span> blank</div>
+          <div class="question-bar wrong-questions bar-hidden" style="flex-grow: ${storedWrong}">` +
+            `<span id="wrong-num">${storedWrong}</span> incorrect</div>
         </div>`
         );
         if ($("#random-input").length)
@@ -522,8 +575,15 @@
 
     let params = `action=parse&page=${pagename}&format=json`;
 
-    let response = await fetch(`${apiEndpoint}?${params}&origin=*`);
-    let json = await response.json();
+    let response;
+    let json;
+    try {
+      response = await fetchWithTimeout(`${apiEndpoint}?${params}&origin=*`);
+      json = await response.json();
+    } catch (err) {
+      showError("Failed to load article.", err.message);
+      return;
+    }
 
     if (json?.parse) {
       let problemText = latexer(json.parse.text["*"]);
@@ -541,8 +601,13 @@
         pagename = redirPage;
 
         params = `action=parse&page=${redirPage}&format=json`;
-        response = await fetch(`${apiEndpoint}?${params}&origin=*`);
-        json = await response.json();
+        try {
+          response = await fetchWithTimeout(`${apiEndpoint}?${params}&origin=*`);
+          json = await response.json();
+        } catch (err) {
+          showError("Failed to load redirected article.", err.message);
+          return;
+        }
         problemText = latexer(json.parse.text["*"]);
       }
 
@@ -618,13 +683,21 @@
         (currentProblem) => `action=parse&page=${currentProblem}&format=json`
       );
       console.log(paramsList);
-      let responseList = await Promise.all(
-        paramsList.map((params) => fetch(`${apiEndpoint}?${params}&origin=*`))
-      );
+      let responseList;
+      let jsonList;
+      try {
+        responseList = await Promise.all(
+          paramsList.map((params) => fetchWithTimeout(`${apiEndpoint}?${params}&origin=*`))
+        );
+        jsonList = await Promise.all(
+          responseList.map((response) => response.json())
+        );
+      } catch (err) {
+        showError("Failed to load problem set.", err.message);
+        $(".loading-notice").remove();
+        return;
+      }
       console.log(responseList);
-      let jsonList = await Promise.all(
-        responseList.map((response) => response.json())
-      );
       console.log(jsonList);
 
       for (let [index, currentProblem] of problemTitles.entries()) {
@@ -676,13 +749,19 @@
           (redirPage) => `action=parse&page=${redirPage}&format=json`
         );
         console.log(paramsList);
-        responseList = await Promise.all(
-          paramsList.map((params) => fetch(`${apiEndpoint}?${params}&origin=*`))
-        );
+        try {
+          responseList = await Promise.all(
+            paramsList.map((params) => fetchWithTimeout(`${apiEndpoint}?${params}&origin=*`))
+          );
+          jsonList = await Promise.all(
+            responseList.map((response) => response.json())
+          );
+        } catch (err) {
+          showError("Failed to load some redirected problems.", err.message);
+          $(".loading-notice").remove();
+          return;
+        }
         console.log(responseList);
-        jsonList = await Promise.all(
-          responseList.map((response) => response.json())
-        );
         console.log(jsonList);
 
         for (let [index, currentProblem] of redirList.entries()) {
@@ -765,11 +844,19 @@
     let clickedTimesThen = clickedTimes;
     answerTries = 0;
     progressUpdated = false;
+    $("#streak-num").text(streakCount);
     let answersTitle = `${pagename?.split(" Problems/Problem")[0]} Answer Key`;
     let params = `action=parse&page=${answersTitle}&format=json`;
 
-    let response = await fetch(`${apiEndpoint}?${params}&origin=*`);
-    let json = await response.json();
+    let response;
+    let json;
+    try {
+      response = await fetchWithTimeout(`${apiEndpoint}?${params}&origin=*`);
+      json = await response.json();
+    } catch (err) {
+      showError("Failed to load answer key.", err.message);
+      return;
+    }
     let answerText = json.parse?.text["*"];
     let problemNum = computeNumber(pagename);
     let answer = $($.parseHTML(answerText))
@@ -837,17 +924,14 @@
 
                   $(".streak-bar").removeClass("bar-hidden");
                   $(".question-bar.right-questions").removeClass("bar-hidden");
+                  storedRight++;
                   $(".question-bar.right-questions").css(
                     "flex-grow",
-                    parseInt(
-                      $(".question-bar.right-questions").css("flex-grow")
-                    ) + 1
+                    storedRight
                   );
-                  $("#right-num").text(
-                    parseInt(
-                      $(".question-bar.right-questions").css("flex-grow")
-                    )
-                  );
+                  $("#right-num").text(storedRight);
+                  localStorage.setItem("progressRight", storedRight);
+                  localStorage.setItem("progressStreak", streakCount);
                   localStorage.setItem(
                     "numCorrect",
                     JSON.parse(localStorage.getItem("numCorrect")) + 1
@@ -855,17 +939,14 @@
                 } else {
                   $(".streak-bar").removeClass("bar-hidden");
                   $(".question-bar.retry-questions").removeClass("bar-hidden");
+                  storedRetry++;
                   $(".question-bar.retry-questions").css(
                     "flex-grow",
-                    parseInt(
-                      $(".question-bar.retry-questions").css("flex-grow")
-                    ) + 1
+                    storedRetry
                   );
-                  $("#retry-num").text(
-                    parseInt(
-                      $(".question-bar.retry-questions").css("flex-grow")
-                    )
-                  );
+                  $("#retry-num").text(storedRetry);
+                  localStorage.setItem("progressRetry", storedRetry);
+                  localStorage.setItem("progressStreak", streakCount);
                   localStorage.setItem(
                     "numRetry",
                     JSON.parse(localStorage.getItem("numRetry")) + 1
@@ -875,6 +956,7 @@
               }
             } else {
               streakCount = 0;
+              localStorage.setItem("progressStreak", 0);
 
               $("#input-answer").removeClass("shake");
               void document.getElementById("input-answer").offsetWidth;
@@ -906,14 +988,20 @@
       (test) => `action=parse&page=${test} Answer Key&format=json`
     );
 
-    let responseList = await Promise.all(
-      paramsList.map((params) => fetch(`${apiEndpoint}?${params}&origin=*`))
-    );
+    let responseList;
+    let jsonList;
+    try {
+      responseList = await Promise.all(
+        paramsList.map((params) => fetchWithTimeout(`${apiEndpoint}?${params}&origin=*`))
+      );
+      jsonList = await Promise.all(
+        responseList.map((response) => response.json())
+      );
+    } catch (err) {
+      showError("Failed to load answer key.", err.message);
+      return;
+    }
     console.log(responseList);
-
-    let jsonList = await Promise.all(
-      responseList.map((response) => response.json())
-    );
     console.log(jsonList);
     let jsonDict = jsonList.reduce((jsonDict, json, index) => {
       return { ...jsonDict, [uniqueTests[index]]: json };
@@ -1092,8 +1180,15 @@
       if (testName && statTests.includes(testName)) {
         let params = `action=parse&page=AMC_historical_results&format=json`;
 
-        let response = await fetch(`${apiEndpoint}?${params}&origin=*`);
-        let json = await response.json();
+        let response;
+        let json;
+        try {
+          response = await fetchWithTimeout(`${apiEndpoint}?${params}&origin=*`);
+          json = await response.json();
+        } catch (err) {
+          console.error("Failed to load AMC historical results:", err);
+          return;
+        }
         let statsText = json.parse?.text["*"];
         let statsList = [];
 
@@ -3111,23 +3206,40 @@
       let params = `action=parse&page=${encodeURIComponent(
         underscores(search)
       )}&format=json`;
-      let response = await fetch(`${apiEndpoint}?${params}&origin=*`);
-      let json = await response.json();
+      let response;
+      let json;
+      try {
+        response = await fetchWithTimeout(`${apiEndpoint}?${params}&origin=*`);
+        json = await response.json();
+      } catch (err) {
+        showError("Search failed.", err.message);
+        return;
+      }
       if (json?.parse) pageExists = true;
 
       params =
         `action=query&list=search&srwhat=text&srsearch=${search}` +
         `&srlimit=max&srqiprofile=wsum_inclinks_pv&format=json`;
-      response = await fetch(`${apiEndpoint}?${params}&origin=*`);
-      json = await response.json();
+      try {
+        response = await fetchWithTimeout(`${apiEndpoint}?${params}&origin=*`);
+        json = await response.json();
+      } catch (err) {
+        showError("Search failed.", err.message);
+        return;
+      }
 
       if (clickedTimes === clickedTimesThen)
         for (let page of json.query.search) enterResult(page);
 
       while (json?.continue) {
         let paramsContinue = params + `&sroffset=${json.continue.sroffset}`;
-        response = await fetch(`${apiEndpoint}?${paramsContinue}&origin=*`);
-        json = await response.json();
+        try {
+          response = await fetchWithTimeout(`${apiEndpoint}?${paramsContinue}&origin=*`);
+          json = await response.json();
+        } catch (err) {
+          console.error("Search pagination failed:", err);
+          break;
+        }
 
         for (let page of json.query.search) enterResult(page);
       }
@@ -3152,8 +3264,15 @@
         `action=query&list=categorymembers&cmtitle=Category:Theorems` +
         `&cmlimit=max&format=json`;
 
-      let response = await fetch(`${apiEndpoint}?${params}&origin=*`);
-      let json = await response.json();
+      let response;
+      let json;
+      try {
+        response = await fetchWithTimeout(`${apiEndpoint}?${params}&origin=*`);
+        json = await response.json();
+      } catch (err) {
+        showError("Failed to load theorems.", err.message);
+        return;
+      }
 
       for (let page of json.query.categorymembers)
         theoremPages.push(page.title);
@@ -3966,25 +4085,27 @@
         if (answerTries > 0) {
           $(".streak-bar").removeClass("bar-hidden");
           $(".question-bar.wrong-questions").removeClass("bar-hidden");
+          storedWrong++;
           $(".question-bar.wrong-questions").css(
             "flex-grow",
-            parseInt($(".question-bar.wrong-questions").css("flex-grow")) + 1
+            storedWrong
           );
-          $("#wrong-num").text(
-            parseInt($(".question-bar.wrong-questions").css("flex-grow"))
-          );
+          $("#wrong-num").text(storedWrong);
+          localStorage.setItem("progressWrong", storedWrong);
+          localStorage.setItem("progressStreak", 0);
         } else {
           streakCount = 0;
           $("#streak-num").text(streakCount);
           $(".streak-bar").removeClass("bar-hidden");
           $(".question-bar.blank-questions").removeClass("bar-hidden");
+          storedBlank++;
           $(".question-bar.blank-questions").css(
             "flex-grow",
-            parseInt($(".question-bar.blank-questions").css("flex-grow")) + 1
+            storedBlank
           );
-          $("#blank-num").text(
-            parseInt($(".question-bar.blank-questions").css("flex-grow"))
-          );
+          $("#blank-num").text(storedBlank);
+          localStorage.setItem("progressBlank", storedBlank);
+          localStorage.setItem("progressStreak", 0);
         }
       }
     });

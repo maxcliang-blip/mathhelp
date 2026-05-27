@@ -1124,6 +1124,12 @@ table:first-child {
   color: var(--error-color);
 }
 
+.error-details {
+  color: var(--minor-color);
+  font-size: 0.9em;
+  margin-top: 0.3em;
+}
+
 .frontlink {
   font-family: "Computer Modern Bright", sans-serif; /* Main page */
 }
