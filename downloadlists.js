@@ -31,8 +31,26 @@ import fs from "fs";
   let params = `action=query&list=allpages&aplimit=max&format=json`;
   let paramsContinue;
 
-  let response = await fetch(`${apiEndpoint}?${params}&origin=*`);
-  let json = await response.json();
+  let fetchOptions = {
+    headers: {
+      "User-Agent": "TrivialMathHelp/1.0 (GitHub Action; +https://github.com/maxcliang-blip/mathhelp)",
+      "Accept": "application/json",
+    },
+  };
+
+  let response = await fetch(`${apiEndpoint}?${params}`, fetchOptions);
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+  }
+  let text = await response.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch (e) {
+    console.error("Failed to parse API response as JSON. First 500 chars:");
+    console.error(text.substring(0, 500));
+    throw e;
+  }
 
   for (let page of json.query.allpages) {
     if (page.title.charAt(0) !== "/") allPages.push(page.title);
@@ -42,8 +60,18 @@ import fs from "fs";
   while (json?.continue) {
     console.log(`${Math.round((allPages.length / numPages) * 100)}% loaded...`);
     paramsContinue = params + `&apcontinue=${json.continue.apcontinue}`;
-    response = await fetch(`${apiEndpoint}?${paramsContinue}&origin=*`);
-    json = await response.json();
+    response = await fetch(`${apiEndpoint}?${paramsContinue}`, fetchOptions);
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    }
+    text = await response.text();
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      console.error("Failed to parse API response as JSON. First 500 chars:");
+      console.error(text.substring(0, 500));
+      throw e;
+    }
 
     for (let page of json.query.allpages) {
       if (page.title.charAt(0) !== "/") allPages.push(page.title);
