@@ -4,10 +4,10 @@
 (() => {
   let allPages = [];
   let allProblems = [];
-  $.getJSON("/data/allpages.json", (json) => {
+  $.getJSON("data/allpages.json", (json) => {
     allPages = json;
   });
-  $.getJSON("/data/allproblems.json", (json) => {
+  $.getJSON("data/allproblems.json", (json) => {
     allProblems = json;
   });
   let apiEndpoint = "https://artofproblemsolving.com/wiki/api.php";
